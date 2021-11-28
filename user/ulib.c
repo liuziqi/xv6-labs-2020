@@ -95,6 +95,7 @@ atoi(const char *s)
   return n;
 }
 
+// 将vsrc指向的内存中的n字节内容拷贝到vdst指向的内存
 void*
 memmove(void *vdst, const void *vsrc, int n)
 {
