@@ -104,6 +104,7 @@ sys_close(void)
   return 0;
 }
 
+//  Place info about an open file into *st.
 uint64
 sys_fstat(void)
 {

@@ -16,24 +16,31 @@ sinfo(struct sysinfo *info) {
 // use sbrk() to count how many free physical memory pages there are.
 //
 int
-countfree()
+countfreemem()
 {
+  // char *sbrk(int n); Grow process’s memory by n bytes. Returns start of new memory.
+  // 所以sz0应该是进程内存首地址
   uint64 sz0 = (uint64)sbrk(0);
   struct sysinfo info;
   int n = 0;
 
   while(1){
+    // PGSIZE 4096, bytes per page
+    // 0xffffffffffffffff表示-1，分配失败？
+    // 内存分配的最小单位就是页，按页分配最终会耗尽所有内存
     if((uint64)sbrk(PGSIZE) == 0xffffffffffffffff){
       break;
     }
     n += PGSIZE;
   }
+  // 函数内部进行系统调用
   sinfo(&info);
   if (info.freemem != 0) {
     printf("FAIL: there is no free mem, but sysinfo.freemem=%d\n",
       info.freemem);
     exit(1);
   }
+  // 释放获得的内存
   sbrk(-((uint64)sbrk(0) - sz0));
   return n;
 }
@@ -41,7 +48,7 @@ countfree()
 void
 testmem() {
   struct sysinfo info;
-  uint64 n = countfree();
+  uint64 n = countfreemem();
   
   sinfo(&info);
 
@@ -56,7 +63,7 @@ testmem() {
   }
 
   sinfo(&info);
-    
+  
   if (info.freemem != n-PGSIZE) {
     printf("FAIL: free mem %d (bytes) instead of %d\n", n-PGSIZE, info.freemem);
     exit(1);

@@ -7,6 +7,42 @@
 #include "spinlock.h"
 #include "proc.h"
 
+#include "sysinfo.h"
+uint64 count_freemem(void);
+uint64 count_proc(void);
+
+int 
+sys_sysinfo()
+{
+  struct sysinfo info;
+  struct proc *p = myproc();
+  uint64 dstva;
+
+  if(argaddr(0, &dstva) < 0) {
+    return -1;
+  }
+
+  info.freemem = count_freemem();
+  info.nproc = count_proc();
+
+  if(copyout(p->pagetable, dstva, (char *)&info, sizeof(info)) < 0)
+      return -1;
+
+  return 0;
+}
+
+uint64
+sys_trace(void) 
+{
+  int tmask;
+  // 去a0寄存器读取参数mask
+  if(argint(0, &tmask) < 0) {
+    return -1;
+  }
+  myproc()->tmask = tmask;
+  return 0;
+}
+
 uint64
 sys_exit(void)
 {

@@ -277,6 +277,8 @@ fork(void)
 
   np->parent = p;
 
+  np->tmask = p->tmask;
+
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -692,4 +694,22 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+// 统计当前进程数量
+uint64
+count_proc(void)
+{
+  
+  uint64 pnum = 0;
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state != UNUSED) {
+      pnum++;
+    }
+    release(&p->lock);
+  }
+  return pnum;
 }
