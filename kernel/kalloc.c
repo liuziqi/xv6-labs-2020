@@ -59,12 +59,10 @@ kfree(void *pa)
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
-  // TODO
-  // pa是页表首地址，run存在页表首地址里，然后页表串联起来？
+  // TODO: pa是页表首地址，run存在页表首地址里，然后页表串联起来？
   r = (struct run*)pa;
 
-  // TODO
-  // 看一下怎么实现自旋锁的
+  // TODO: 看一下怎么实现自旋锁的
   acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;

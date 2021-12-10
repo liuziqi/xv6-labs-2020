@@ -56,6 +56,7 @@ kvminithart()
   sfence_vma();
 }
 
+// 输入虚拟地址va，输出最后一级页表页表条目
 // Return the address of the PTE in page table pagetable
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page-table pages.
@@ -75,16 +76,24 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
     panic("walk");
 
   for(int level = 2; level > 0; level--) {
+    // 指向页表条目的指针
     pte_t *pte = &pagetable[PX(level, va)];
+    // 页表条目->下级页表地址
+    // 页表条目最低位是1表示可用 #define PTE_V (1L << 0)
     if(*pte & PTE_V) {
       pagetable = (pagetable_t)PTE2PA(*pte);
     } else {
-      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+      // alloc == 1 表示创建页表条目
+      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0) // 分配失败
         return 0;
+      // 这里表示 alloc == 1 且新建的 pagetable != 0
       memset(pagetable, 0, PGSIZE);
+      // 因为是新建的页表，所以需要更新原页表条目
+      // TODO: kalloc()是怎么保证页表的起始地址的低12位都是0的？
       *pte = PA2PTE(pagetable) | PTE_V;
     }
   }
+  // 返回最后一级页表页表条目
   return &pagetable[PX(0, va)];
 }
 
@@ -151,9 +160,11 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   uint64 a, last;
   pte_t *pte;
 
+  // va所在页的首地址
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
+    // 分配失败
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
     if(*pte & PTE_V)
