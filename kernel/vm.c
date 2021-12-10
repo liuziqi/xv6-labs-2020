@@ -283,10 +283,32 @@ freewalk(pagetable_t pagetable)
       freewalk((pagetable_t)child);
       pagetable[i] = 0;
     } else if(pte & PTE_V){
+      // 执行freewalk()的前提是叶子页已经被释放了
       panic("freewalk: leaf");
     }
   }
   kfree((void*)pagetable);
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  for(int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    // 不可读、不可写、不可执行表示该页是页表，否则是数据页？
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+      printf(".. ");
+      uint64 child = PTE2PA(pte);
+      vmprint((pagetable_t)child);
+    }
+    // 最后一级的页表项指向数据页
+    if(pte & PTE_V) {
+      printf("..%d: ", i);
+      printf("pte %p ", pte);
+      printf("pa %p\n", PTE2PA(pte));
+    }
+  }
 }
 
 // Free user memory pages,
