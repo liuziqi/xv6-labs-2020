@@ -21,9 +21,12 @@ extern char trampoline[]; // trampoline.S
 void
 kvminit()
 {
+  // kalloc()返回的应该是物理地址，因为这时候页表还未初始化
   kernel_pagetable = (pagetable_t) kalloc();
   memset(kernel_pagetable, 0, PGSIZE);
 
+  // 这里及以下，物理地址和虚拟地址之间是直接映射
+  // 物理地址是固定的，重要的是虚拟地址被设置为和物理地址相同
   // uart registers
   kvmmap(UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
@@ -45,14 +48,53 @@ kvminit()
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
   kvmmap(TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+
+  // DEBUG
+  // vmprint(kernel_pagetable);
+}
+
+// 构造内核映射表kpagetable
+pagetable_t
+proc_kvminit()
+{
+  pagetable_t pkpagetable = (pagetable_t)kalloc();
+  if(pkpagetable == 0) {
+    return 0;
+  }
+  memset(pkpagetable, 0, PGSIZE);
+
+  proc_kvmmap(pkpagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
+  proc_kvmmap(pkpagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+  proc_kvmmap(pkpagetable, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+  proc_kvmmap(pkpagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+  proc_kvmmap(pkpagetable, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+  proc_kvmmap(pkpagetable, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  proc_kvmmap(pkpagetable, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  return pkpagetable;
+}
+
+void
+proc_kvmmap(pagetable_t pkpagetable, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(pkpagetable, va, sz, pa, perm) != 0)
+    panic("proc_kvmmap");
 }
 
 // Switch h/w page table register to the kernel's page table,
 // and enable paging.
+// 最初在start()函数里satp寄存器被设置为0，禁用页表机制
 void
 kvminithart()
 {
   w_satp(MAKE_SATP(kernel_pagetable));
+  sfence_vma();
+}
+
+// 切换到内核映射页表
+void
+proc_kvminithart(pagetable_t pkpagetable)
+{
+  w_satp(MAKE_SATP(pkpagetable));
   sfence_vma();
 }
 
@@ -68,6 +110,8 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
+// 为虚拟地址找到PTE
+// 系统启动时页表转换是禁用的，在这里均是把物理地址当作虚拟地址
 pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
@@ -158,6 +202,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
       return -1;
     if(*pte & PTE_V)
       panic("remap");
+    // 这里pte指向最后一级的页表项
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -179,6 +224,7 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   if((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
 
+  // 把虚拟地址va指向的连续npages页全部释放
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
@@ -290,23 +336,50 @@ freewalk(pagetable_t pagetable)
   kfree((void*)pagetable);
 }
 
+// 释放进程的内核映射页表
+void
+proc_freewalk(pagetable_t pagetable)
+{
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0){
+      uint64 child = PTE2PA(pte);
+      proc_freewalk((pagetable_t)child);
+      pagetable[i] = 0;
+    }
+  }
+  kfree((void*)pagetable);
+}
+
 void
 vmprint(pagetable_t pagetable)
 {
   printf("page table %p\n", pagetable);
+  _vmprint(pagetable, 1);
+}
+
+void 
+_vmprint(pagetable_t pagetable, int d)
+{
   for(int i = 0; i < 512; i++) {
     pte_t pte = pagetable[i];
-    // 不可读、不可写、不可执行表示该页是页表，否则是数据页？
-    if((pte & PTE_V) && (pte & (PTE_R|PTE_W|PTE_X)) == 0) {
-      printf(".. ");
-      uint64 child = PTE2PA(pte);
-      vmprint((pagetable_t)child);
-    }
-    // 最后一级的页表项指向数据页
     if(pte & PTE_V) {
-      printf("..%d: ", i);
-      printf("pte %p ", pte);
-      printf("pa %p\n", PTE2PA(pte));
+      uint64 child = PTE2PA(pte);
+      switch (d) {
+      case 1:
+        printf("..%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+        _vmprint((pagetable_t)child, d+1);
+        break;
+      case 2:
+        printf(".. ..%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+        _vmprint((pagetable_t)child, d+1);
+        break;
+      case 3:
+        printf(".. .. ..%d: pte %p pa %p\n", i, pte, PTE2PA(pte));
+        break;
+      default:
+        panic("vmprint: error");
+      }
     }
   }
 }

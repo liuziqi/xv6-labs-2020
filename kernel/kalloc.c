@@ -11,6 +11,9 @@
 
 void freerange(void *pa_start, void *pa_end);
 
+// 从0x80000000开始，存储kernel text 和 kernel data
+// end表示内核结束的地址
+// TODO: 为什么是char[]类型？
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 

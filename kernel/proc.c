@@ -8,6 +8,7 @@
 
 struct cpu cpus[NCPU];
 
+// 预先分配进程结构体，可以先填写内核栈地址信息，pid等信息在进程创建时再填写
 struct proc proc[NPROC];
 
 struct proc *initproc;
@@ -28,6 +29,7 @@ procinit(void)
   struct proc *p;
   
   initlock(&pid_lock, "nextpid");
+  // 对每个进程都分配一个内核栈
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
 
@@ -37,9 +39,14 @@ procinit(void)
       char *pa = kalloc();
       if(pa == 0)
         panic("kalloc");
+      // 内核栈的物理地址和虚拟地址不是直接映射
       uint64 va = KSTACK((int) (p - proc));
       kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
       p->kstack = va;
+      
+      // DEBUG
+      // p->pkpagetable = proc_kvminit();
+      // vmprint(p->pkpagetable);
   }
   kvminithart();
 }
@@ -125,7 +132,13 @@ found:
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
-  p->context.sp = p->kstack + PGSIZE;
+  p->context.sp = p->kstack + PGSIZE; // sp指向栈顶
+
+  // 分配内核映射页表，内核栈信息添加到内核映射页表
+  p->pkpagetable = proc_kvminit();
+  uint64 va = KSTACK((int) (p - proc));
+  uint64 pa = kvmpa(va);
+  proc_kvmmap(p->pkpagetable, va, pa, PGSIZE, PTE_R | PTE_W);
 
   return p;
 }
@@ -142,6 +155,10 @@ freeproc(struct proc *p)
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
+  // 释放进程的内核映射页表
+  if(p->pkpagetable)
+    proc_freewalk(p->pkpagetable);
+  p->pkpagetable = 0;
   p->sz = 0;
   p->pid = 0;
   p->parent = 0;
@@ -190,9 +207,9 @@ proc_pagetable(struct proc *p)
 void
 proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
-  uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-  uvmunmap(pagetable, TRAPFRAME, 1, 0);
-  uvmfree(pagetable, sz);
+  uvmunmap(pagetable, TRAMPOLINE, 1, 0);  // 释放TRAMPOLINE页
+  uvmunmap(pagetable, TRAPFRAME, 1, 0);   // 释放TRAPFRAME页
+  uvmfree(pagetable, sz);                 // 释放用户的内存页和页表页
 }
 
 // a user program that calls exec("/init")
@@ -473,7 +490,15 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
+
+        // 切换到进程的内核映射页表
+        proc_kvminithart(p->pkpagetable);
+
+        // 执行进程
         swtch(&c->context, &p->context);
+
+        // 切换回内核页表
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.
