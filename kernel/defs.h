@@ -186,6 +186,9 @@ pagetable_t     proc_kvminit();
 void            proc_kvmmap(pagetable_t, uint64, uint64, uint64, int);
 void            proc_freewalk(pagetable_t);
 void            proc_kvminithart(pagetable_t);
+// 第三个实验
+int             proc_kernel_uvmcopy(pagetable_t, pagetable_t, uint64, uint64);
+int             proc_mappages(pagetable_t, uint64, uint64, uint64, int);
 
 
 // plic.c

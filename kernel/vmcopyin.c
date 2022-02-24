@@ -31,9 +31,10 @@ copyin_new(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   struct proc *p = myproc();
 
+  // p->sz是进程内存大小，进程空间[0, p->sz)
   if (srcva >= p->sz || srcva+len >= p->sz || srcva+len < srcva)
     return -1;
-  memmove((void *) dst, (void *)srcva, len);
+  memmove((void *)dst, (void *)srcva, len);
   stats.ncopyin++;   // XXX lock
   return 0;
 }

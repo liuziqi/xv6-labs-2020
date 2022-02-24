@@ -238,6 +238,9 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
+  // 实验3
+  proc_kernel_uvmcopy(p->pagetable, p->pkpagetable, 0, p->sz);
+
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -260,12 +263,24 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    // 实验3
+    if(sz + n > PLIC || (sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+      return -1;
+    }
+    // 拷贝到内核页表
+    if(proc_kernel_uvmcopy(p->pagetable, p->pkpagetable, p->sz, sz) == -1) {
       return -1;
     }
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+
+    // 取消映射
+    if(sz != p->sz) {
+      uvmunmap(p->pkpagetable, PGROUNDUP(sz), (PGROUNDUP(p->sz) - PGROUNDUP(sz)) / PGSIZE,0);
+    }
   }
+  // 切换到进程内核页表
+  proc_kvminithart(p->pkpagetable);
   p->sz = sz;
   return 0;
 }
@@ -291,6 +306,14 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  // 实验3
+  // 复制内存映射到子进程的内核页表
+  if(proc_kernel_uvmcopy(np->pagetable, np->pkpagetable, 0, np->sz) < 0) {
+    freeproc(np);
+    release(&np->lock);
+    return -1;
+  }
 
   np->parent = p;
 

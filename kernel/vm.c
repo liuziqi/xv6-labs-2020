@@ -198,7 +198,7 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   a = PGROUNDDOWN(va);
   last = PGROUNDDOWN(va + size - 1);
   for(;;){
-    if((pte = walk(pagetable, a, 1)) == 0)
+    if((pte = walk(pagetable, a, 1)) == 0)            
       return -1;
     if(*pte & PTE_V)
       panic("remap");
@@ -477,10 +477,14 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
   uint64 n, va0, pa0;
 
   while(len > 0){
+    // 页首地址
     va0 = PGROUNDDOWN(srcva);
+    // va0对应的物理地址
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+    // (srcva - va0)偏移量
+    // PGSIZE - (srcva - va0) 除去偏移量剩下的长度
     n = PGSIZE - (srcva - va0);
     if(n > len)
       n = len;
@@ -491,6 +495,14 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
     srcva = va0 + PGSIZE;
   }
   return 0;
+}
+
+// 改写copyin
+int
+copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
+{
+  // 这里是虚拟地址，让MMU(Memory Management Unit)解引用
+  return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -534,4 +546,55 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int
+proc_kernel_uvmcopy(pagetable_t proc_pagetable, pagetable_t kernel_pagetable, uint64 old_sz, uint64 new_sz)
+{
+  pte_t *pte;
+  uint64 pa, va;
+  uint perm;
+  // 目前的页所能存的最大字节数
+  old_sz = PGROUNDUP(old_sz);
+  if(new_sz <= old_sz)
+    return 0;
+  for(va = old_sz; va < new_sz; va += PGSIZE) {
+    // i超出了原有页面
+    if((pte = walk(proc_pagetable, va, 0)) == 0)
+      panic("proc_kernel_uvmcopy: pte not exist");
+    if((*pte & PTE_V) == 0)
+      panic("proc_kernel_uvmcopy: page invalid");
+    pa = PTE2PA(*pte);
+    perm = PTE_FLAGS(*pte);
+    // 清除PTE_U确保内核可以访问用户页
+    perm &= ~PTE_U;
+    if(proc_mappages(kernel_pagetable, va, PGSIZE, pa, perm) != 0)
+      goto err;
+  }
+  return 0;
+
+err:
+  uvmunmap(kernel_pagetable, old_sz, (va - old_sz) / PGSIZE, 0);
+  return -1;
+  
+}
+
+int
+proc_mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+{
+  uint64 a, last;
+  pte_t *pte;
+
+  a = PGROUNDDOWN(va);
+  last = PGROUNDDOWN(va + size - 1);
+  for(;;) {
+    if((pte = walk(pagetable, a, 1)) == 0)              
+      return -1;
+    *pte = PA2PTE(pa) | perm | PTE_V;
+    if(a == last)
+      break;
+    a += PGSIZE;
+    pa += PGSIZE;
+  }
+  return 0;
 }
