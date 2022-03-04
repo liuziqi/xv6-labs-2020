@@ -86,7 +86,7 @@ usertrap(void)
     // 发生时钟中断，计数加1
     if(p->alarmticks != 0 && ++(p->alarmduration) == p->alarmticks) {
       p->alarmduration = 0;
-      // 这是返回的不是用户空间
+      // 这是返回的是periodic()入口地址
       if(p->alarmtrapframe == 0) {
         p->alarmtrapframe = kalloc();
         memmove(p->alarmtrapframe, p->trapframe, PGSIZE);
