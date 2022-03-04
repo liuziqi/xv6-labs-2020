@@ -132,3 +132,16 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+// 实验4 Backtrace
+void
+backtrace(void)
+{
+  printf("backtrace:\n");
+  uint64 fp = r_fp(); // 从s0寄存器读取当前正在执行的函数的帧指针
+  uint64 base = PGROUNDUP(fp);
+  while(fp < base) {
+    printf("%p\n", *((uint64*)(fp - 8)));
+    fp = *((uint64*)(fp - 16));
+  }
+}

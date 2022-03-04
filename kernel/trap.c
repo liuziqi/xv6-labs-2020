@@ -41,6 +41,7 @@ usertrap(void)
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
+  // 将内核产生trap时的处理函数入口写入stvec，uservec是用户空间trap的函数入口
   // send interrupts and exceptions to kerneltrap(),
   // since we're now in the kernel.
   w_stvec((uint64)kernelvec);
@@ -77,8 +78,24 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  // if(which_dev == 2)
+  //   yield();
+
+  // 实验4
+  if(which_dev == 2) {
+    // 发生时钟中断，计数加1
+    if(p->alarmticks != 0 && ++(p->alarmduration) == p->alarmticks) {
+      p->alarmduration = 0;
+      // 这是返回的不是用户空间
+      if(p->alarmtrapframe == 0) {
+        p->alarmtrapframe = kalloc();
+        memmove(p->alarmtrapframe, p->trapframe, PGSIZE);
+        p->trapframe->epc = p->alarmhandler;
+      }
+    } else {
+      yield();
+    }
+  }
 
   usertrapret();
 }

@@ -55,6 +55,9 @@ sys_sbrk(void)
 uint64
 sys_sleep(void)
 {
+  // 实验4，添加backtrace()函数
+  backtrace();
+
   int n;
   uint ticks0;
 
@@ -94,4 +97,35 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+// 实验4 alarm
+uint64
+sys_sigalarm(void)
+{
+  struct proc *p = myproc();
+
+  // 从a0获取参数
+  if(argint(0, &(p->alarmticks)) < 0) {
+    return -1;
+  }
+  if(argaddr(1, &(p->alarmhandler)) < 0) {
+    return -1;
+  }
+  p->alarmduration = 0;
+  p->alarmtrapframe = 0;
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+
+  if(p->alarmtrapframe != 0) {
+    memmove(p->trapframe, p->alarmtrapframe, PGSIZE);
+    kfree(p->alarmtrapframe);
+    p->alarmtrapframe = 0;
+  }
+  return 0;
 }
