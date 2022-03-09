@@ -67,6 +67,33 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15) {
+    // printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+    // printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+    // p->killed = 1;
+
+    // 引起page fault的虚拟内存地址
+    uint64 va = r_stval();
+    // 虚拟地址高于已分配的虚拟地址空间
+    if(va < p->sz && va > PGROUNDDOWN(p->trapframe->sp)) {
+      // 分配新的物理页
+      uint64 pa = (uint64)kalloc();
+      // 内存不足
+      if(!pa) {
+        p->killed = 1;
+      } else {
+        // printf("%p\n%p\n", va, page);
+        va = PGROUNDDOWN(va);
+        int ret = mappages(myproc()->pagetable, va, PGSIZE, pa, PTE_V | PTE_R | PTE_W | PTE_U);
+        if(ret != 0) {
+          kfree((void *)pa);
+          printf("usertrap(): fail to allocate page-table page");
+          p->killed = 1;
+        }
+      }
+    } else {
+        p->killed = 1;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

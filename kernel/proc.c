@@ -255,6 +255,9 @@ growproc(int n)
 
 // Create a new process, copying the parent.
 // Sets up child kernel stack to return as if from fork() system call.
+
+extern pte_t * walk(pagetable_t, uint64, int);
+
 int
 fork(void)
 {
@@ -273,6 +276,7 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+
   np->sz = p->sz;
 
   np->parent = p;
