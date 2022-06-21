@@ -65,8 +65,16 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } else if((which_dev = devintr()) != 0) {
     // ok
+  }
+  // r_scause() 来查看错误类型，13为读缺页，15为写缺页 r_stval()
+  // r_stval() 返回寄存器 staval 的值，该寄存器存储着引起缺页的虚拟地址
+  // 其实不会产生读缺页
+  else if((r_scause() == 13 || r_scause() == 15) && uvmcheckcowpage(r_stval())) { // copy-on write
+    if(uvmcowcopy(r_stval()) == -1) { // 如果内存不足则杀死进程 
+      p->killed = 1;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
